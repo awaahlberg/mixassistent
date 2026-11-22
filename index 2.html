@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Mixassistent mobil</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #161a21;
+  --panel: #1f252e;
+  --line: #333c49;
+  --text: #ebe6da;
+  --dim: #98a0ab;
+  --bar: #e2a53a;
+  --bar-sel: #f6cf7e;
+  --peak: #ebe6da;
+  --ref: #7fc4d6;
+  --warn: #e8553f;
+  --warn-text: #fff3ef;
+  --ok: #7fbf7a;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f1f2ee;
+    --panel: #ffffff;
+    --line: #cfd3d8;
+    --text: #1b2026;
+    --dim: #5d6672;
+    --bar: #b87412;
+    --bar-sel: #7d4d06;
+    --peak: #1b2026;
+    --ref: #1c7d95;
+    --warn: #c43a25;
+    --warn-text: #ffffff;
+    --ok: #2f7d32;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  padding: env(safe-area-inset-top, 0px) 12px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  -webkit-text-size-adjust: 100%;
+}
+h1 { font-size: 17px; font-weight: 650; margin: 10px 0 2px; }
+h2 { font-size: 15px; font-weight: 650; margin: 0 0 8px; }
+p { margin: 0 0 8px; }
+.dim { color: var(--dim); font-size: 13px; }
+button, select, .filbtn {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px;
+  min-height: 44px; padding: 8px 12px;
+}
+button:focus-visible, select:focus-visible { outline: 2px solid var(--ref); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--bar); border-color: var(--bar); color: #1b1608; font-weight: 650; }
+select { width: 100%; }
+.rad { display: flex; gap: 8px; margin: 8px 0; }
+.rad > * { flex: 1; }
+.seg { display: flex; }
+.seg button { flex: 1; border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+
+#start { margin: 18vh 0 0; }
+#start button { width: 100%; min-height: 64px; font-size: 19px; font-weight: 650;
+  background: var(--bar); border-color: var(--bar); color: #1b1608; }
+#fel { color: var(--warn); font-weight: 600; margin-top: 12px; }
+
+#niva { display: flex; align-items: baseline; gap: 12px; margin: 6px 0 4px; }
+#niva b { font-size: 26px; font-weight: 650; }
+#matare { height: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+#matare i { display: block; height: 100%; width: 0; background: var(--bar); }
+#matare.klipp i { background: var(--warn); }
+
+#rta { display: block; width: 100%; height: 44vh; min-height: 240px; margin-top: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; touch-action: pan-y; }
+#avlast { min-height: 24px; margin: 6px 2px; font-size: 15px; }
+
+#rundgang { display: none; background: var(--warn); color: var(--warn-text);
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0; font-weight: 650; font-size: 18px; }
+#rundgang small { display: block; font-weight: 400; font-size: 13px; }
+
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-top: 12px; }
+ul { margin: 0; padding-left: 20px; }
+li { margin-bottom: 4px; }
+input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.filbtn { display: inline-flex; align-items: center; }
+#app { display: none; }
+</style>
+</head>
+<body>
+
+<h1>Mixassistent mobil <span class="dim" style="font-weight:400">0.3</span></h1>
+
+<div id="start">
+  <p>Koppla UMIK-1 till telefonen och tryck på knappen. Säg ja när webbläsaren frågar om mikrofonen.</p>
+  <button id="startknapp">Starta mätning</button>
+  <div id="fel" role="alert"></div>
+</div>
+
+<div id="app">
+  <div class="dim" id="status"></div>
+
+  <div id="niva"><b id="rms">–</b><span class="dim">dBFS RMS</span><span class="dim" id="topp"></span></div>
+  <div id="matare"><i></i></div>
+
+  <div id="rundgang" role="alert"></div>
+
+  <canvas id="rta" aria-label="Spektrum i tersband"></canvas>
+  <div id="avlast" class="dim">Tryck på en stapel för att läsa av bandet.</div>
+
+  <div class="seg" role="group" aria-label="Medelvärde">
+    <button data-lage="snabb" aria-pressed="false">Snabb</button>
+    <button data-lage="langsam" aria-pressed="true">Långsam</button>
+    <button data-lage="medel" aria-pressed="false">Medel</button>
+  </div>
+  <div class="rad">
+    <button id="topphall" aria-pressed="true">Topphåll</button>
+    <button id="nollstall">Nollställ</button>
+  </div>
+
+  <section>
+    <h2 id="tipsrubrik">Iakttagelser</h2>
+    <select id="kallval" aria-label="Vad som låter"></select>
+    <ul id="tips" style="margin-top:10px"><li class="dim">Väntar på ljud.</li></ul>
+    <p class="dim" id="tipsnot" style="margin:8px 0 0"></p>
+  </section>
+
+  <section>
+    <h2>Referens</h2>
+    <p class="dim" id="refstatus">Ingen referens sparad.</p>
+    <div class="rad">
+      <button id="sparaRef">Spara referens</button>
+      <button id="tabortRef">Ta bort</button>
+    </div>
+    <p class="dim" style="margin:0">Sparar medelkurvan, till exempel från en låt du vet låter bra i rummet. Linjen ritas nivåmatchad mot det som spelas.</p>
+  </section>
+
+  <section>
+    <h2>Ingång och kalibrering</h2>
+    <select id="ingang" aria-label="Ingång"></select>
+    <p class="dim" id="kalstatus" style="margin-top:10px">Ingen kalibreringsfil inläst.</p>
+    <div class="rad">
+      <label class="filbtn" for="kalfil">Läs in kalibreringsfil</label>
+      <button id="tabortKal">Ta bort</button>
+    </div>
+    <input type="file" id="kalfil" accept=".txt,.cal,text/plain">
+    <p class="dim" style="margin:0">UMIK-filen från miniDSP: 90°-filen om mikrofonen pekar uppåt, 0° om den pekar mot högtalarna.</p>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const NOM = [25,31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000];
+const NB = NOM.length;
+const FC = NOM.map((_, i) => 1000 * Math.pow(2, (i - 16) / 3));
+const STOR = 32768, LITEN = 4096;
+const PARSEVAL = 1 / 0.1523;   // Blackman-fönster: summerad bineffekt -> RMS-effekt
+const TYST = -140;
+
+let ctx, strom, kalla, anStor, anLiten, bufStor, bufLiten, bufTid;
+let band = [];                 // {stor:bool, lo, hi}
+let pSnabb = new Float64Array(NB), pLangsam = new Float64Array(NB), pSum = new Float64Array(NB);
+let nSum = 0, tSum = 0;
+let toppDb = new Float64Array(NB).fill(TYST);
+let kal = null, kalNamn = "";
+let ref = null;
+let lage = "langsam", visaTopp = true, vald = -1;
+let yTopp = -20;
+let fbP = null, fbBin = -1, fbSedan = 0, fbVisaTill = 0, fbHz = 0;
+let senast = 0, senastTips = 0, toppNiva = TYST;
+let farg = {};
+let las = null;
+
+const db = p => p > 0 ? 10 * Math.log10(p) : TYST;
+const tal = (x, d = 1) => x.toFixed(d).replace(".", ",").replace("-", "−");
+const hz = f => (f >= 1000 ? String(f / 1000) + " kHz" : String(f) + " Hz").replace(".", ",");
+function spara(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function hamta(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+
+function lasFarger() {
+  const s = getComputedStyle(document.documentElement);
+  for (const n of ["bg","panel","line","text","dim","bar","bar-sel","peak","ref","warn","ok"]) farg[n] = s.getPropertyValue("--" + n).trim();
+}
+
+/* ---------- Ljud in ---------- */
+async function starta(deviceId) {
+  $("fel").textContent = "";
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("fel").textContent = "Webbläsaren ger inte sidan tillgång till mikrofonen. Sidan måste öppnas via en https-adress, inte som fil.";
+    return;
+  }
+  try {
+    if (strom) strom.getTracks().forEach(t => t.stop());
+    const ljud = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    if (deviceId) ljud.deviceId = { exact: deviceId };
+    strom = await navigator.mediaDevices.getUserMedia({ audio: ljud });
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+    await ctx.resume();
+    if (kalla) kalla.disconnect();
+    kalla = ctx.createMediaStreamSource(strom);
+    if (!anStor) {
+      anStor = ctx.createAnalyser(); anStor.fftSize = STOR; anStor.smoothingTimeConstant = 0;
+      anLiten = ctx.createAnalyser(); anLiten.fftSize = LITEN; anLiten.smoothingTimeConstant = 0;
+      bufStor = new Float32Array(STOR / 2); bufLiten = new Float32Array(LITEN / 2); bufTid = new Float32Array(LITEN);
+      fbP = new Float64Array(LITEN / 2);
+      const tyst = ctx.createGain(); tyst.gain.value = 0;   // håller grafen igång utan att något hörs
+      anStor.connect(tyst); anLiten.connect(tyst); tyst.connect(ctx.destination);
+      raknaBand();
+    }
+    kalla.connect(anStor); kalla.connect(anLiten);
+    $("start").style.display = "none"; $("app").style.display = "block";
+    await fyllIngangar();
+    visaStatus();
+    hallVaken();
+    nollstall();
+    if (!senast) { senast = performance.now(); requestAnimationFrame(tick); }
+  } catch (e) {
+    const m = e && e.name === "NotAllowedError" ? "Sidan fick inte använda mikrofonen. Tillåt mikrofon för sidan i webbläsarens inställningar och ladda om."
+      : e && e.name === "NotFoundError" ? "Ingen mikrofon hittades. Kontrollera att UMIK-1 sitter i och ladda om."
+      : "Kunde inte öppna mikrofonen: " + (e && e.message || e);
+    $("fel").textContent = m;
+    $("start").style.display = "block";
+  }
+}
+
+function raknaBand() {
+  const sr = ctx.sampleRate;
+  band = FC.map(fc => {
+    const stor = fc < 224, n = stor ? STOR : LITEN, bin = sr / n;
+    let lo = Math.round(fc / Math.pow(2, 1 / 6) / bin), hi = Math.round(fc * Math.pow(2, 1 / 6) / bin) - 1;
+    hi = Math.min(hi, n / 2 - 1); lo = Math.max(1, Math.min(lo, hi));
+    return { stor, lo, hi };
+  });
+}
+
+async function fyllIngangar() {
+  const sel = $("ingang");
+  try {
+    const alla = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput");
+    const aktiv = strom.getAudioTracks()[0].getSettings().deviceId;
+    sel.innerHTML = "";
+    alla.forEach((d, i) => {
+      const o = document.createElement("option");
+      o.value = d.deviceId; o.textContent = d.label || "Ingång " + (i + 1);
+      if (d.deviceId === aktiv) o.selected = true;
+      sel.appendChild(o);
+    });
+  } catch (e) {}
+}
+
+function visaStatus() {
+  const sp = strom.getAudioTracks()[0];
+  const s = sp.getSettings ? sp.getSettings() : {};
+  let t = (sp.label || "Okänd ingång") + ", " + String(Math.round(ctx.sampleRate / 100) / 10).replace(".", ",") + " kHz";
+  const pa = [];
+  if (s.echoCancellation) pa.push("ekosläckning");
+  if (s.noiseSuppression) pa.push("brusreducering");
+  if (s.autoGainControl) pa.push("automatisk nivå");
+  if (pa.length) t += ". Varning: telefonen har " + pa.join(", ") + " påslaget, kurvan blir missvisande";
+  $("status").textContent = t;
+}
+
+async function hallVaken() {
+  try { if ("wakeLock" in navigator) las = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && ctx) { ctx.resume(); hallVaken(); }
+});
+
+/* ---------- Analys ---------- */
+function tick(nu) {
+  const dt = Math.min(0.5, (nu - senast) / 1000); senast = nu;
+  anStor.getFloatFrequencyData(bufStor);
+  anLiten.getFloatFrequencyData(bufLiten);
+  anLiten.getFloatTimeDomainData(bufTid);
+
+  // Nivå
+  let s2 = 0, pk = 0;
+  for (let i = 0; i < bufTid.length; i++) { const v = bufTid[i]; s2 += v * v; const a = v < 0 ? -v : v; if (a > pk) pk = a; }
+  const rms = db(s2 / bufTid.length), pkDb = pk > 0 ? 20 * Math.log10(pk) : TYST;
+  toppNiva = Math.max(pkDb, toppNiva - 12 * dt);
+  const ljud = rms > -95;
+
+  // Tersband
+  const aS = 1 - Math.exp(-dt / 0.2), aL = 1 - Math.exp(-dt / 2.5);
+  for (let b = 0; b < NB; b++) {
+    const B = band[b], buf = B.stor ? bufStor : bufLiten;
+    let p = 0;
+    for (let k = B.lo; k <= B.hi; k++) p += Math.pow(10, buf[k] / 10);
+    p *= PARSEVAL;
+    if (!isFinite(p)) p = 0;
+    pSnabb[b] += aS * (p - pSnabb[b]);
+    pLangsam[b] += aL * (p - pLangsam[b]);
+    if (ljud) pSum[b] += p * dt;
+    const d = db(pSnabb[b]) - (kal ? kal[b] : 0);
+    if (d > toppDb[b]) toppDb[b] = d;
+  }
+  if (ljud) { tSum += dt; nSum++; }
+
+  rundgang(dt, nu);
+  ritaNiva(rms, pkDb);
+  rita();
+  if (nu - senastTips > 1000) { senastTips = nu; visaTips(ljud); visaAvlast(); }
+  requestAnimationFrame(tick);
+}
+
+function kurva(vilken) {
+  const ut = new Float64Array(NB);
+  for (let b = 0; b < NB; b++) {
+    const p = vilken === "snabb" ? pSnabb[b] : vilken === "langsam" ? pLangsam[b] : (tSum > 0 ? pSum[b] / tSum : 0);
+    ut[b] = db(p) - (kal ? kal[b] : 0);
+  }
+  return ut;
+}
+function medel(L, f1, f2) {
+  let s = 0, n = 0;
+  for (let b = 0; b < NB; b++) if (NOM[b] >= f1 && NOM[b] <= f2) { s += L[b]; n++; }
+  return n ? s / n : 0;
+}
+
+function nollstall() {
+  pSum.fill(0); tSum = 0; nSum = 0; toppDb.fill(TYST);
+}
+
+/* Ihållande smal ton = möjlig rundgång */
+function rundgang(dt, nu) {
+  const bin = ctx.sampleRate / LITEN, a = 1 - Math.exp(-dt / 0.25);
+  const k1 = Math.ceil(150 / bin), k2 = Math.min(Math.floor(10000 / bin), fbP.length - 2);
+  let m = k1, tot = 0;
+  for (let k = k1; k <= k2; k++) {
+    const p = Math.pow(10, bufLiten[k] / 10);
+    fbP[k] += a * ((isFinite(p) ? p : 0) - fbP[k]);
+    tot += fbP[k];
+    if (fbP[k] > fbP[m]) m = k;
+  }
+  const lo = Math.max(k1, Math.floor(m / 1.26)), hi = Math.min(k2, Math.ceil(m * 1.26));
+  let rs = 0, rn = 0;
+  for (let k = lo; k <= hi; k++) if (Math.abs(k - m) > 3) { rs += fbP[k]; rn++; }
+  const omg = rn ? rs / rn : 0;
+  const ton = fbP[m - 1] + fbP[m] + fbP[m + 1];
+  const traff = omg > 0 && db(fbP[m] / omg) >= 20 && ton >= 0.25 * tot && db(tot * PARSEVAL) > -85;
+  if (traff && Math.abs(m - fbBin) <= 2) {
+    fbSedan += dt;
+    if (fbSedan >= 0.8) {
+      const y0 = db(fbP[m - 1]), y1 = db(fbP[m]), y2 = db(fbP[m + 1]);
+      const den = y0 - 2 * y1 + y2;
+      fbHz = (m + (den ? 0.5 * (y0 - y2) / den : 0)) * bin;
+      fbVisaTill = nu + 6000;
+    }
+  } else { fbSedan = 0; }
+  fbBin = traff ? m : -1;
+  const el = $("rundgang");
+  if (nu < fbVisaTill) {
+    el.style.display = "block";
+    el.innerHTML = "Ihållande ton vid " + Math.round(fbHz / 10) * 10 + " Hz<small>Kan vara rundgång, eller en lång ton från orgel eller synt.</small>";
+  } else el.style.display = "none";
+}
+
+/* ---------- Förslag per källa ---------- */
+// Regel: [zon från, zon till, jämförs mot från, till, gräns dB, "over"|"under", vad det låter som]
+const SANG = (g1, g2) => [
+  [g1, g2, 500, 1000, 6, "over", "Grötigt"],
+  [800, 1250, 400, 630, 3, "over", "Nasalt eller burkigt"],
+  [2000, 4000, 315, 1000, -5, "over", "Vasst"],
+  [2000, 4000, 315, 1000, -20, "under", "Otydligt, texten går inte fram"],
+  [5000, 8000, 2000, 4000, 0, "over", "Vassa s-ljud (avessare hjälper mer än EQ)"]
+];
+const KALLOR = {
+  sopran:  { namn: "Sopran", hp: 160, regler: SANG(250, 400) },
+  alt:     { namn: "Alt", hp: 125, regler: SANG(250, 400) },
+  tenor:   { namn: "Tenor", hp: 100, regler: SANG(200, 400) },
+  bas:     { namn: "Bas eller baryton", hp: 80, regler: SANG(160, 315) },
+  tal:     { namn: "Tal", hp: 100, regler: SANG(200, 400) },
+  akgitarr:{ namn: "Akustisk gitarr", hp: 80, regler: [
+    [100, 160, 250, 1000, 6, "over", "Bullrigt"],
+    [200, 400, 500, 2000, 6, "over", "Grötigt"],
+    [2000, 5000, 250, 1000, -3, "over", "Vasst"],
+    [2000, 5000, 250, 1000, -20, "under", "Dovt, anslaget hörs inte"] ] },
+  elgitarr:{ namn: "Elgitarr", hp: 80, regler: [
+    [160, 315, 400, 2000, 5, "over", "Grötigt"],
+    [800, 1250, 315, 630, 4, "over", "Burkigt"],
+    [2500, 5000, 400, 2000, 0, "over", "Vasst"],
+    [6300, 10000, 1000, 4000, -5, "over", "Fräsigt (lågpassfilter runt 8 kHz kan räcka)"] ] },
+  elbas:   { namn: "Elbas", hp: 0, regler: [
+    [200, 400, 50, 125, 0, "over", "Grötigt"],
+    [630, 1250, 50, 125, -25, "under", "Otydligt, tonerna går inte att följa"] ] },
+  piano:   { namn: "Piano eller keyboard", hp: 0, regler: [
+    [200, 400, 500, 2000, 6, "over", "Grötigt"],
+    [2000, 4000, 315, 1000, -3, "over", "Vasst"],
+    [2000, 4000, 315, 1000, -22, "under", "Dovt"] ] }
+};
+let kallval = "";
+// Målkurvor, tumregler: [Hz, dB mot medel av 315 Hz–3,15 kHz]
+const SANGMAL = lag => lag.concat([[1000, 0], [2000, -4], [3150, -5], [4000, -7], [8000, -13], [12500, -18], [16000, -24]]);
+const MAL = {
+  sopran:  [[160, -20], [200, -8], [250, 0], [315, 3], [800, 3], [1250, 1], [2000, -2], [3150, -3], [4000, -5], [8000, -11], [12500, -16], [16000, -24]],
+  alt:     [[125, -20], [160, -8], [200, -1], [250, 3], [315, 4], [630, 3], [1000, 1], [2000, -3], [3150, -4], [4000, -6], [8000, -12], [12500, -17], [16000, -24]],
+  tenor:   SANGMAL([[80, -25], [100, -12], [125, -4], [160, 1], [200, 3], [250, 4], [500, 3]]),
+  bas:     SANGMAL([[63, -25], [80, -10], [100, -2], [125, 2], [160, 4], [400, 3]]),
+  tal:     SANGMAL([[80, -25], [100, -12], [125, -4], [160, 1], [200, 3], [250, 4], [500, 3]]),
+  akgitarr:[[63, -20], [80, -4], [100, 2], [125, 6], [160, 6], [200, 4.5], [1000, 0.5], [5000, -4.5], [10000, -7.5], [16000, -15]],
+  elgitarr:[[63, -25], [80, -6], [100, 0], [160, 3], [400, 2], [1000, 0], [2500, -1], [4000, -4], [6300, -10], [10000, -20]],
+  elbas:   [[31.5, 10], [50, 18], [100, 18], [160, 12], [250, 6], [500, 2], [1000, 0], [2000, -4], [4000, -10], [8000, -20]],
+  piano:   [[31.5, -10], [63, 0], [125, 4], [250, 3], [500, 2], [1000, 0], [2000, -3], [4000, -6], [8000, -10], [16000, -18]]
+};
+let mal = null;   // per band, NaN utanför kurvans område
+function raknaMal() {
+  const P = MAL[kallval];
+  if (!P) { mal = null; return; }
+  mal = NOM.map(f => {
+    if (f < P[0][0] || f > P[P.length - 1][0]) return NaN;
+    for (let i = 1; i < P.length; i++) if (f <= P[i][0]) {
+      const t = Math.log(f / P[i - 1][0]) / Math.log(P[i][0] / P[i - 1][0]);
+      return P[i - 1][1] + t * (P[i][1] - P[i - 1][1]);
+    }
+    return NaN;
+  });
+}
+function malSkift(L) {   // nivåmatchar målkurvan mot mätningen i 315 Hz–3,15 kHz
+  let s = 0, n = 0;
+  for (let b = 0; b < NB; b++) if (NOM[b] >= 315 && NOM[b] <= 3150 && !isNaN(mal[b])) { s += L[b] - mal[b]; n++; }
+  return n ? s / n : 0;
+}
+
+function kallTips(L, ut) {
+  const K = KALLOR[kallval];
+  const toppband = (f1, f2) => { let m = -1; for (let b = 0; b < NB; b++) if (NOM[b] >= f1 && NOM[b] <= f2 && (m < 0 || L[b] > L[m])) m = b; return m; };
+  const tagna = [];
+  if (K.hp) {
+    const under = medel(L, 25, K.hp / 1.4), karna = medel(L, K.hp * 1.25, 1000);
+    if (under - karna > -12) ut.push("Det ligger ljud under " + hz(K.hp) + " som källan inte behöver (" + tal(under - karna, 0) + " dB mot tonområdet). Sätt högpassfilter runt " + hz(K.hp) + " om det inte redan är gjort.");
+  }
+  for (const [z1, z2, m1, m2, grans, typ, later] of K.regler) {
+    const d = medel(L, z1, z2) - medel(L, m1, m2);
+    const spann = (a, b) => (a >= 1000) === (b >= 1000) ? hz(a).replace(/ k?Hz/, "") + "–" + hz(b) : hz(a) + "–" + hz(b);
+    const omr = spann(z1, z2);
+    if (typ === "over" && d > grans) {
+      const dbs = Math.max(2, Math.min(6, Math.round((d - grans) / 2) + 2));
+      tagna.push([z1, z2]);
+      ut.push(later + ": " + omr + " ligger " + (d >= 0 ? "+" : "") + tal(d, 0) + " dB mot " + spann(m1, m2) + ". Prova att sänka " + dbs + " dB runt " + hz(NOM[toppband(z1, z2)]) + ".");
+    } else if (typ === "under" && d < grans) {
+      const mitt = NOM[toppband(Math.sqrt(z1 * z2) / 1.15, Math.sqrt(z1 * z2) * 1.15)];
+      ut.push(later + ": " + omr + " ligger " + tal(d, 0) + " dB mot " + spann(m1, m2) + ". Prova att höja 2–3 dB brett runt " + hz(mitt) + ".");
+    }
+  }
+  const kand = [];
+  for (let b = 2; b < NB - 2; b++) {
+    if (NOM[b] < Math.max(80, K.hp) || NOM[b] > 8000) continue;
+    if (tagna.some(([a, c]) => NOM[b] >= a && NOM[b] <= c)) continue;
+    const d = L[b] - (L[b - 2] + L[b + 2]) / 2;
+    if (d >= 6 && L[b] >= L[b - 1] && L[b] >= L[b + 1]) kand.push([d, b]);
+  }
+  kand.sort((x, y) => y[0] - x[0]).slice(0, 2).forEach(([d, b]) =>
+    ut.push(hz(NOM[b]) + " sticker ut, +" + tal(d, 0) + " dB över omgivningen. Prova en smal sänkning där (Q 3–4)."));
+  if (mal) {
+    const sk = malSkift(L), avv = [];
+    for (let b = 0; b < NB; b++) if (!isNaN(mal[b]) && NOM[b] >= 80 && NOM[b] <= 10000) avv.push([L[b] - mal[b] - sk, b]);
+    avv.sort((x, y) => Math.abs(y[0]) - Math.abs(x[0]));
+    const stora = avv.filter(a => Math.abs(a[0]) >= 4).slice(0, 3);
+    if (stora.length) ut.push("Mot målkurvan: " + stora.map(([d, b]) => hz(NOM[b]) + " " + (d >= 0 ? "+" : "") + tal(d, 0) + " dB").join(", ") + ".");
+  }
+  if (!ut.length) ut.push("Inget tydligt att ändra.");
+}
+
+function visaKallval() {
+  const K = KALLOR[kallval];
+  $("tipsrubrik").textContent = K ? "Förslag för " + K.namn.toLowerCase() : "Iakttagelser";
+  $("tipsnot").textContent = K
+    ? "Streckad grön linje är en målkurva för källan, nivåmatchad mot mätningen. Den är en tumregel, inget facit. Gäller bara när källan låter ensam eller tydligt dominerar i högtalarna. Tryck Nollställ och låt den låta i minst 10 s. Gränserna är tumregler, lita på öronen."
+    : "Bygger på det som spelas just nu, inte på rummets svar. En låt med mycket bas ger mycket bas här.";
+}
+
+/* ---------- Iakttagelser ---------- */
+function visaTips(ljud) {
+  const ul = $("tips");
+  const lagg = rader => { ul.innerHTML = ""; rader.forEach(r => { const li = document.createElement("li"); li.textContent = r; ul.appendChild(li); }); };
+  if (!ljud && tSum < 5) { ul.innerHTML = '<li class="dim">Väntar på ljud.</li>'; return; }
+  const lang = tSum >= 10;
+  const L = kurva(lang ? "medel" : "langsam");
+  const mid = medel(L, 315, 3150);
+  const ut = [];
+  if (kallval) {
+    kallTips(L, ut);
+    ut.push(lang ? "Underlag: medel över " + Math.round(tSum) + " s." : "Underlag: de senaste sekunderna. Blir stadigare efter 10 s.");
+    lagg(ut); return;
+  }
+
+  const kand = [];
+  for (let b = 2; b < NB - 2; b++) {
+    if (NOM[b] < 63 || NOM[b] > 8000) continue;
+    const d = L[b] - (L[b - 2] + L[b + 2]) / 2;
+    if (d >= 5 && L[b] >= L[b - 1] && L[b] >= L[b + 1]) kand.push([d, b]);
+  }
+  kand.sort((x, y) => y[0] - x[0]).slice(0, 3).forEach(([d, b]) =>
+    ut.push(hz(NOM[b]) + " sticker ut, +" + tal(d, 0) + " dB över omgivningen."));
+
+  const bas = medel(L, 40, 100) - mid;
+  if (bas > 15) ut.push("Basen (40–100 Hz) ligger +" + tal(bas, 0) + " dB över mellanregistret.");
+  else if (bas < -3) ut.push("Basen (40–100 Hz) ligger " + tal(bas, 0) + " dB under mellanregistret.");
+  const lm = medel(L, 200, 400) - medel(L, 630, 3150);
+  if (lm > 6) ut.push("200–400 Hz ligger +" + tal(lm, 0) + " dB över övre mellanregistret. Kan låta grötigt.");
+  const nv = medel(L, 2000, 4000) - medel(L, 400, 1250);
+  if (nv > 3) ut.push("2–4 kHz ligger +" + tal(nv, 0) + " dB över mellanregistret. Kan låta vasst.");
+
+  let sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
+  for (let b = 0; b < NB; b++) if (NOM[b] >= 1000 && NOM[b] <= 10000) {
+    const x = Math.log2(NOM[b] / 1000); sx += x; sy += L[b]; sxx += x * x; sxy += x * L[b]; n++;
+  }
+  const lut = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  if (lut < -6) ut.push("Diskanten faller brant, " + tal(lut) + " dB per oktav över 1 kHz. Kan låta dovt.");
+  else if (lut > 0) ut.push("Diskanten faller inte alls över 1 kHz (" + tal(lut) + " dB per oktav). Kan låta ljust.");
+
+  if (!ut.length) ut.push("Inget sticker ut just nu.");
+  ut.push(lang ? "Underlag: medel över " + Math.round(tSum) + " s." : "Underlag: de senaste sekunderna. Blir stadigare efter 10 s.");
+  lagg(ut);
+}
+
+/* ---------- Rita ---------- */
+function ritaNiva(rms, pk) {
+  $("rms").textContent = rms <= TYST + 1 ? "–" : tal(rms);
+  $("topp").textContent = "topp " + (toppNiva <= TYST + 1 ? "–" : tal(toppNiva));
+  const m = $("matare");
+  m.firstElementChild.style.width = Math.max(0, Math.min(100, (rms + 90) / 90 * 100)) + "%";
+  m.classList.toggle("klipp", toppNiva > -1);
+}
+
+function rita() {
+  const c = $("rta"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  const L = kurva(lage);
+  let mx = TYST; for (let b = 0; b < NB; b++) if (L[b] > mx) mx = L[b];
+  const mal = Math.max(-80, Math.ceil((mx + 8) / 10) * 10);
+  if (mal > yTopp || mal < yTopp - 10) yTopp = mal;
+  const spann = 60, yBotten = yTopp - spann;
+  const vL = 34, vR = 6, vT = 8, vB = 22;
+  const pw = w - vL - vR, ph = h - vT - vB, bw = pw / NB;
+  const y = d => vT + ph * (1 - Math.max(0, Math.min(1, (d - yBotten) / spann)));
+
+  g.font = "11px system-ui, sans-serif"; g.textBaseline = "middle";
+  g.strokeStyle = farg.line; g.fillStyle = farg.dim; g.lineWidth = 1;
+  for (let d = yTopp; d >= yBotten; d -= 10) {
+    const yy = Math.round(y(d)) + 0.5;
+    g.beginPath(); g.moveTo(vL, yy); g.lineTo(w - vR, yy); g.stroke();
+    g.textAlign = "right"; g.fillText(String(d).replace("-", "−"), vL - 5, yy);
+  }
+  g.textAlign = "center"; g.textBaseline = "alphabetic";
+  const etik = { 31.5: "31", 63: "63", 125: "125", 250: "250", 500: "500", 1000: "1k", 2000: "2k", 4000: "4k", 8000: "8k", 16000: "16k" };
+  for (let b = 0; b < NB; b++) if (etik[NOM[b]]) g.fillText(etik[NOM[b]], vL + (b + 0.5) * bw, h - 6);
+
+  for (let b = 0; b < NB; b++) {
+    const x = vL + b * bw + 1, yy = y(L[b]);
+    g.fillStyle = b === vald ? farg["bar-sel"] : farg.bar;
+    g.fillRect(x, yy, bw - 2, vT + ph - yy);
+    if (visaTopp && toppDb[b] > yBotten) {
+      g.fillStyle = farg.peak;
+      g.fillRect(x, y(toppDb[b]) - 1, bw - 2, 2);
+    }
+  }
+  if (mal) {
+    const skift = malSkift(L);
+    g.strokeStyle = farg.ok; g.lineWidth = 2.5; g.lineJoin = "round"; g.setLineDash([7, 4]); g.beginPath();
+    let forst = true;
+    for (let b = 0; b < NB; b++) {
+      if (isNaN(mal[b])) continue;
+      const xx = vL + (b + 0.5) * bw, yy = y(mal[b] + skift);
+      forst ? g.moveTo(xx, yy) : g.lineTo(xx, yy); forst = false;
+    }
+    g.stroke(); g.setLineDash([]);
+  }
+  if (ref) {
+    const skift = medel(L, 315, 3150) - medel(ref, 315, 3150);
+    g.strokeStyle = farg.ref; g.lineWidth = 2; g.lineJoin = "round"; g.beginPath();
+    for (let b = 0; b < NB; b++) {
+      const xx = vL + (b + 0.5) * bw, yy = y(ref[b] + skift);
+      b ? g.lineTo(xx, yy) : g.moveTo(xx, yy);
+    }
+    g.stroke();
+  }
+}
+
+function visaAvlast() {
+  if (vald < 0) return;
+  const L = kurva(lage);
+  let t = hz(NOM[vald]) + ": " + tal(L[vald]) + " dB";
+  if (visaTopp && toppDb[vald] > TYST + 1) t += ", topp " + tal(toppDb[vald]);
+  if (mal && !isNaN(mal[vald])) {
+    const d = L[vald] - (mal[vald] + malSkift(L));
+    t += ", mot mål " + (d >= 0 ? "+" : "") + tal(d) + " dB";
+  }
+  if (ref) {
+    const d = (L[vald] - medel(L, 315, 3150)) - (ref[vald] - medel(ref, 315, 3150));
+    t += ", mot referens " + (d >= 0 ? "+" : "") + tal(d) + " dB";
+  }
+  const el = $("avlast"); el.textContent = t; el.classList.remove("dim");
+}
+
+/* ---------- Kalibrering ---------- */
+function tolkaKal(text) {
+  const pkt = [];
+  for (const rad of text.split(/\r?\n/)) {
+    const m = rad.trim().match(/^(\d+(?:[.,]\d+)?)[\s;,]+(-?\d+(?:[.,]\d+)?)/);
+    if (m) pkt.push([parseFloat(m[1].replace(",", ".")), parseFloat(m[2].replace(",", "."))]);
+  }
+  if (pkt.length < 10) return null;
+  return FC.map(fc => {
+    const f1 = fc / Math.pow(2, 1 / 6), f2 = fc * Math.pow(2, 1 / 6);
+    let s = 0, n = 0;
+    for (const [f, d] of pkt) if (f >= f1 && f < f2) { s += d; n++; }
+    if (n) return s / n;
+    let bast = pkt[0];
+    for (const p of pkt) if (Math.abs(Math.log(p[0] / fc)) < Math.abs(Math.log(bast[0] / fc))) bast = p;
+    return bast[1];
+  });
+}
+function visaKal() {
+  $("kalstatus").textContent = kal ? "Kalibrering: " + kalNamn + " (vid 10 kHz " + (kal[26] >= 0 ? "+" : "") + tal(kal[26]) + " dB)." : "Ingen kalibreringsfil inläst.";
+}
+$("kalfil").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const k = tolkaKal(await f.text());
+  if (!k) { $("kalstatus").textContent = "Kunde inte läsa " + f.name + " som kalibreringsfil."; return; }
+  kal = k; kalNamn = f.name; spara("mx_kal", { kal, kalNamn }); visaKal(); nollstall(); e.target.value = "";
+});
+$("tabortKal").addEventListener("click", () => { kal = null; spara("mx_kal", null); visaKal(); nollstall(); });
+
+/* ---------- Referens ---------- */
+function visaRef(tid) {
+  $("refstatus").textContent = ref ? "Referens sparad" + (tid ? " " + tid : "") + ". Visas som linje i diagrammet." : "Ingen referens sparad.";
+}
+$("sparaRef").addEventListener("click", () => {
+  if (tSum < 5) { $("refstatus").textContent = "För lite underlag. Låt det spela minst 5 s efter Nollställ."; return; }
+  ref = Array.from(kurva("medel"));
+  const tid = new Date().toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+  spara("mx_ref", { ref, tid }); visaRef(tid);
+});
+$("tabortRef").addEventListener("click", () => { ref = null; spara("mx_ref", null); visaRef(); });
+
+/* ---------- Reglage ---------- */
+document.querySelectorAll(".seg button").forEach(k => k.addEventListener("click", () => {
+  lage = k.dataset.lage;
+  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === k));
+  visaAvlast();
+}));
+$("topphall").addEventListener("click", e => {
+  visaTopp = !visaTopp; e.currentTarget.setAttribute("aria-pressed", visaTopp); toppDb.fill(TYST);
+});
+$("nollstall").addEventListener("click", nollstall);
+$("rta").addEventListener("pointerdown", e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  const b = Math.floor((e.clientX - r.left - 34) / ((r.width - 40) / NB));
+  vald = b >= 0 && b < NB ? b : -1; visaAvlast();
+});
+$("ingang").addEventListener("change", e => starta(e.target.value));
+$("startknapp").addEventListener("click", () => starta());
+if (navigator.mediaDevices) navigator.mediaDevices.addEventListener("devicechange", () => { if (strom) fyllIngangar(); });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", lasFarger);
+
+{
+  const sel = $("kallval");
+  const lagg = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); };
+  lagg("", "Hela mixen");
+  for (const k in KALLOR) lagg(k, KALLOR[k].namn);
+  sel.addEventListener("change", () => { kallval = sel.value; raknaMal(); visaKallval(); nollstall(); senastTips = 0; });
+  visaKallval();
+}
+lasFarger();
+{ const k = hamta("mx_kal"); if (k && k.kal && k.kal.length === NB) { kal = k.kal; kalNamn = k.kalNamn; } visaKal(); }
+{ const r = hamta("mx_ref"); if (r && r.ref && r.ref.length === NB) { ref = r.ref; visaRef(r.tid); } }
+</script>
+</body>
+</html>

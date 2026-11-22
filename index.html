@@ -96,7 +96,7 @@ input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
 </head>
 <body>
 
-<h1>Mixassistent mobil <span class="dim" style="font-weight:400">0.3</span></h1>
+<h1>Mixassistent mobil <span class="dim" style="font-weight:400">0.3.1</span></h1>
 
 <div id="start">
   <p>Koppla UMIK-1 till telefonen och tryck på knappen. Säg ja när webbläsaren frågar om mikrofonen.</p>
@@ -277,7 +277,7 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- Analys ---------- */
 function tick(nu) {
-  const dt = Math.min(0.5, (nu - senast) / 1000); senast = nu;
+  const dt = Math.max(0, Math.min(0.5, (nu - senast) / 1000)); senast = nu;
   anStor.getFloatFrequencyData(bufStor);
   anLiten.getFloatFrequencyData(bufLiten);
   anLiten.getFloatTimeDomainData(bufTid);
@@ -542,8 +542,8 @@ function rita() {
 
   const L = kurva(lage);
   let mx = TYST; for (let b = 0; b < NB; b++) if (L[b] > mx) mx = L[b];
-  const mal = Math.max(-80, Math.ceil((mx + 8) / 10) * 10);
-  if (mal > yTopp || mal < yTopp - 10) yTopp = mal;
+  const yMal = Math.max(-80, Math.ceil((mx + 8) / 10) * 10);
+  if (yMal > yTopp || yMal < yTopp - 10) yTopp = yMal;
   const spann = 60, yBotten = yTopp - spann;
   const vL = 34, vR = 6, vT = 8, vB = 22;
   const pw = w - vL - vR, ph = h - vT - vB, bw = pw / NB;
